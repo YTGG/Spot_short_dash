@@ -13,7 +13,7 @@ import time
 pd.options.display.float_format = '{:.5f}'.format
 
 def get_usdt_kr():
-    api = "5fba6c30-0548-444a-8102-0df73458b870"
+    api = "yoru key"
     # cmc = coinmarketcapapi.CoinMarketCapAPI(api)
     exchange_rate_url = "https://search.naver.com/search.naver?where=nexearch&sm=top_hty&fbm=1&ie=utf8&query=%ED%99%98%EC%9C%A8"
     resp = requests.get(exchange_rate_url)
