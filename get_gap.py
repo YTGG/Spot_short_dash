@@ -9,11 +9,15 @@ from time import sleep
 import numpy as np
 from pybithumb import Bithumb
 import time
+import telegram
 
 pd.options.display.float_format = '{:.5f}'.format
+bnc_api_key = "your key"
+bnc_api_secret = "your key"
+
 
 def get_usdt_kr():
-    api = "5fba6c30-0548-444a-8102-0df73458b870"
+    api = "your key"
     # cmc = coinmarketcapapi.CoinMarketCapAPI(api)
     exchange_rate_url = "https://search.naver.com/search.naver?where=nexearch&sm=top_hty&fbm=1&ie=utf8&query=%ED%99%98%EC%9C%A8"
     resp = requests.get(exchange_rate_url)
@@ -29,6 +33,8 @@ def get_usdt_kr():
     return USDT_kr_price
 
 def get_bnc_upbit_intersection(upbit_market_all):
+
+    client = Client(bnc_api_key, bnc_api_secret)
     bnc_market_all = client.futures_ticker()
 
     bnc_market_name = [
@@ -44,21 +50,28 @@ def get_bnc_upbit_intersection(upbit_market_all):
 
 
 def get_binance_perp_ask(symbol):
-    asks_list = client.futures_order_book(symbol=symbol)['bids']
+
+    client = Client(bnc_api_key, bnc_api_secret)
     asks_dict = {'symbol': symbol.split('USDT')[0], 'size': [], 'price': [], 'each_asks_total_price': [],
-                 'stack_size': [], 'stack_price': [], 'stack_avg_price': []}
-    for i in asks_list:
-        asks_dict['stack_size'].append(sum(asks_dict['size']) + float(i[1]))
-        asks_dict['stack_price'].append(sum(asks_dict['each_asks_total_price']) + float(i[0]) * float(i[1]))
-        asks_dict['size'].append(float(i[1]))
-        asks_dict['price'].append(float(i[0]))
-        asks_dict['each_asks_total_price'].append(float(i[0]) * float(i[1]))
-        asks_dict['stack_avg_price'].append(sum(asks_dict['each_asks_total_price']) / sum(asks_dict['size']))
+            'stack_size': [], 'stack_price': [], 'stack_avg_price': []}
+    try:
+        asks_list = client.futures_order_book(symbol=symbol)['bids']
 
-        if asks_dict['stack_price'][-1] > 10000:
-            break
+        for i in asks_list:
+            asks_dict['stack_size'].append(sum(asks_dict['size']) + float(i[1]))
+            asks_dict['stack_price'].append(sum(asks_dict['each_asks_total_price']) + float(i[0]) * float(i[1]))
+            asks_dict['size'].append(float(i[1]))
+            asks_dict['price'].append(float(i[0]))
+            asks_dict['each_asks_total_price'].append(float(i[0]) * float(i[1]))
+            asks_dict['stack_avg_price'].append(sum(asks_dict['each_asks_total_price']) / sum(asks_dict['size']))
 
-    return asks_dict
+            if asks_dict['stack_price'][-1] > 10000:
+                break
+
+        return asks_dict
+    except:
+        return asks_dict
+
 
 
 def get_binance_perp_df(intersection):
@@ -102,15 +115,16 @@ def get_ftx_perp_df(intersection):
     ftx_df = pd.DataFrame(ftx_result)
     return ftx_df
 
-def get_okex_upbit_intersection(upbit_market_all):
-
-    okex_list = requests.get('https://www.okex.com/api/swap/v3/instruments').json()
-    okex_list = [i['instrument_id'].split('-')[0] for i in okex_list if 'USDT' in i['instrument_id']]
-
-    # 양대마켓에 둘다 있는 코인 (binance는 뒤에 USDT 붙이고, upbit은 앞에 KRW- 를 붙여서 사용하면 된다.)
-    intersection = list(set(okex_list) & set(upbit_market_all))
-
-    return intersection
+# def get_okex_upbit_intersection(upbit_market_all):
+#
+#     okex_list = requests.get('https://www.okex.com/api/swap/v3/instruments').json()
+#     print (okex_list)
+#     okex_list = [i['instrument_id'].split('-')[0] for i in okex_list if 'USDT' in i['instrument_id']]
+#
+#     # 양대마켓에 둘다 있는 코인 (binance는 뒤에 USDT 붙이고, upbit은 앞에 KRW- 를 붙여서 사용하면 된다.)
+#     intersection = list(set(okex_list) & set(upbit_market_all))
+#
+#     return intersection
 
 def get_okex_perp_ask(symbol):
     ########################
@@ -239,7 +253,7 @@ def get_upbit_asks_df(intersection):
     for i in intersection:
         res = get_upbit_asks('KRW-' + i)
         upbit_list.append(res)
-        sleep(0.1)  # upbit request 제한
+        sleep(0.07)  # upbit request 제한
     upbit_df = pd.DataFrame(upbit_list)
     return upbit_df
 
@@ -249,14 +263,13 @@ def get_bithumb_asks_df(intersection):
     for i in intersection:
         res = get_bithumb_asks(i)
         bithumb_list.append(res)
-        sleep(0.1)  # upbit request 제한
+        # sleep(0.1)  # upbit request 제한
     bithumb_df = pd.DataFrame(bithumb_list)
     return bithumb_df
 
 
 ################################################################
-
-def get_gap_bnc_df():
+def get_common_upbit_intersection():
     url = "https://api.upbit.com/v1/market/all"
     querystring = {"isDetails": "false"}
     headers = {"Accept": "application/json"}
@@ -268,13 +281,36 @@ def get_gap_bnc_df():
         if market_info["market"].split("-")[0] == "KRW"
     ]
 
-    global client
-    client = Client()
-    intersection=get_bnc_upbit_intersection(upbit_market_all)
-    # intersection=get_ftx_upbit_intersection()
-    bnc_df=get_binance_perp_df(intersection)
+    intersection = []
+    intersection.extend(get_bnc_upbit_intersection(upbit_market_all))
+    intersection.extend(get_ftx_upbit_intersection(upbit_market_all))
+    # intersection.extend(get_okex_upbit_intersection(upbit_market_all))
+    intersection = list(set(intersection))
+
+    global upbit_df
     upbit_df=get_upbit_asks_df(intersection)
-    bnc_df=get_kimp_df(bnc_df,upbit_df,intersection)
+
+    return upbit_market_all
+
+def get_common_bithumb_intersection():
+
+    bithumb_market_all = Bithumb.get_tickers()
+    intersection = []
+    intersection.extend(get_bnc_upbit_intersection(bithumb_market_all))
+    intersection.extend(get_ftx_upbit_intersection(bithumb_market_all))
+    # intersection.extend(get_okex_upbit_intersection(bithumb_market_all))
+    intersection = list(set(intersection))
+
+    global bithumb_df
+    bithumb_df=get_bithumb_asks_df(intersection)
+
+    return bithumb_market_all
+
+def get_gap_bnc_df(upbit_market_all):
+
+    intersection=get_bnc_upbit_intersection(upbit_market_all)
+    bnc_df=get_binance_perp_df(intersection)
+    bnc_df=get_kimp_df(bnc_df,upbit_df[upbit_df.symbol.isin(intersection)],intersection)
     bnc_df['gap']=(np.array(bnc_df['upbit_avg_price'])/np.array(bnc_df['bnc_avg_price']))/(np.array(bnc_df[bnc_df['symbol']=='BTC']['upbit_avg_price'])/np.array(bnc_df[bnc_df['symbol']=='BTC']['bnc_avg_price']))
     now = time.localtime()
     bnc_df['time'] = time.strftime('%X', now)
@@ -282,24 +318,11 @@ def get_gap_bnc_df():
 
     return bnc_df
 
-def get_gap_ftx_df():
-    url = "https://api.upbit.com/v1/market/all"
-    querystring = {"isDetails": "false"}
-    headers = {"Accept": "application/json"}
-    response = requests.request("GET", url, headers=headers, params=querystring)
-    upbit_market_all = response.json()
-    upbit_market_all = [
-        market_info["market"].replace("KRW-", "")
-        for market_info in upbit_market_all
-        if market_info["market"].split("-")[0] == "KRW"
-    ]
+def get_gap_ftx_df(upbit_market_all):
 
-    global client
-    client = Client()
     intersection=get_ftx_upbit_intersection(upbit_market_all)
     ftx_df=get_ftx_perp_df(intersection)
-    upbit_df=get_upbit_asks_df(intersection)
-    ftx_df=get_kimp_df(ftx_df,upbit_df,intersection)
+    ftx_df=get_kimp_df(ftx_df,upbit_df[upbit_df.symbol.isin(intersection)],intersection)
     ftx_df['gap']=(np.array(ftx_df['upbit_avg_price'])/np.array(ftx_df['bnc_avg_price']))/(np.array(ftx_df[ftx_df['symbol']=='BTC']['upbit_avg_price'])/np.array(ftx_df[ftx_df['symbol']=='BTC']['bnc_avg_price']))
     now = time.localtime()
     ftx_df['time'] = time.strftime('%X', now)
@@ -307,43 +330,25 @@ def get_gap_ftx_df():
 
     return ftx_df
 
-def get_gap_okex_df():
-    url = "https://api.upbit.com/v1/market/all"
-    querystring = {"isDetails": "false"}
-    headers = {"Accept": "application/json"}
-    response = requests.request("GET", url, headers=headers, params=querystring)
-    upbit_market_all = response.json()
-    upbit_market_all = [
-        market_info["market"].replace("KRW-", "")
-        for market_info in upbit_market_all
-        if market_info["market"].split("-")[0] == "KRW"
-    ]
-
-    global client
-    client = Client()
-    intersection=get_okex_upbit_intersection(upbit_market_all)
-    okex_df=get_okex_perp_df(intersection)
-    upbit_df=get_upbit_asks_df(intersection)
-    okex_df=get_kimp_df(okex_df,upbit_df,intersection)
-    okex_df['gap']=(np.array(okex_df['upbit_avg_price'])/np.array(okex_df['bnc_avg_price']))/(np.array(okex_df[okex_df['symbol']=='BTC']['upbit_avg_price'])/np.array(okex_df[okex_df['symbol']=='BTC']['bnc_avg_price']))
-    now = time.localtime()
-    okex_df['time'] = time.strftime('%X', now)
-    okex_df=round(okex_df,4)
-
-    return okex_df
+# def get_gap_okex_df(upbit_market_all):
+#
+#     intersection=get_okex_upbit_intersection(upbit_market_all)
+#     okex_df=get_okex_perp_df(intersection)
+#     okex_df=get_kimp_df(okex_df,upbit_df[upbit_df.symbol.isin(intersection)],intersection)
+#     okex_df['gap']=(np.array(okex_df['upbit_avg_price'])/np.array(okex_df['bnc_avg_price']))/(np.array(okex_df[okex_df['symbol']=='BTC']['upbit_avg_price'])/np.array(okex_df[okex_df['symbol']=='BTC']['bnc_avg_price']))
+#     now = time.localtime()
+#     okex_df['time'] = time.strftime('%X', now)
+#     okex_df=round(okex_df,4)
+#
+#     return okex_df
 
 ######################################################################
 
-def get_gap_bnc_df_bithumb():
-    bithumb_market_all=Bithumb.get_tickers()
+def get_gap_bnc_df_bithumb(bithumb_market_all):
 
-    global client
-    client = Client()
     intersection=get_bnc_upbit_intersection(bithumb_market_all)
-    # intersection=get_ftx_upbit_intersection()
     bnc_df=get_binance_perp_df(intersection)
-    bithumb_df=get_bithumb_asks_df(intersection)
-    bnc_df=get_kimp_df(bnc_df,bithumb_df,intersection)
+    bnc_df=get_kimp_df(bnc_df,bithumb_df[bithumb_df.symbol.isin(intersection)],intersection)
     bnc_df['gap']=(np.array(bnc_df['upbit_avg_price'])/np.array(bnc_df['bnc_avg_price']))/(np.array(bnc_df[bnc_df['symbol']=='BTC']['upbit_avg_price'])/np.array(bnc_df[bnc_df['symbol']=='BTC']['bnc_avg_price']))
 
     now = time.localtime()
@@ -353,15 +358,11 @@ def get_gap_bnc_df_bithumb():
 
     return bnc_df
 
-def get_gap_ftx_df_bithumb():
-    bithumb_market_all=Bithumb.get_tickers()
+def get_gap_ftx_df_bithumb(bithumb_market_all):
 
-    global client
-    client = Client()
     intersection=get_ftx_upbit_intersection(bithumb_market_all)
     ftx_df=get_ftx_perp_df(intersection)
-    bithumb_df=get_bithumb_asks_df(intersection)
-    ftx_df=get_kimp_df(ftx_df,bithumb_df,intersection)
+    ftx_df=get_kimp_df(ftx_df,bithumb_df[bithumb_df.symbol.isin(intersection)],intersection)
     ftx_df['gap']=(np.array(ftx_df['upbit_avg_price'])/np.array(ftx_df['bnc_avg_price']))/(np.array(ftx_df[ftx_df['symbol']=='BTC']['upbit_avg_price'])/np.array(ftx_df[ftx_df['symbol']=='BTC']['bnc_avg_price']))
     now = time.localtime()
     ftx_df['time'] = time.strftime('%X', now)
@@ -369,47 +370,64 @@ def get_gap_ftx_df_bithumb():
 
     return ftx_df
 
-def get_gap_okex_df_bithumb():
-    bithumb_market_all=Bithumb.get_tickers()
-
-    global client
-    client = Client()
-    intersection=get_okex_upbit_intersection(bithumb_market_all)
-    okex_df=get_okex_perp_df(intersection)
-    bithumb_df=get_bithumb_asks_df(intersection)
-    okex_df=get_kimp_df(okex_df,bithumb_df,intersection)
-    okex_df['gap']=(np.array(okex_df['upbit_avg_price'])/np.array(okex_df['bnc_avg_price']))/(np.array(okex_df[okex_df['symbol']=='BTC']['upbit_avg_price'])/np.array(okex_df[okex_df['symbol']=='BTC']['bnc_avg_price']))
-    now = time.localtime()
-    okex_df['time'] = time.strftime('%X', now)
-    okex_df=round(okex_df,4)
-
-    return okex_df
+# def get_gap_okex_df_bithumb(bithumb_market_all):
+#
+#     intersection=get_okex_upbit_intersection(bithumb_market_all)
+#     okex_df=get_okex_perp_df(intersection)
+#     okex_df=get_kimp_df(okex_df,bithumb_df[bithumb_df.symbol.isin(intersection)],intersection)
+#     okex_df['gap']=(np.array(okex_df['upbit_avg_price'])/np.array(okex_df['bnc_avg_price']))/(np.array(okex_df[okex_df['symbol']=='BTC']['upbit_avg_price'])/np.array(okex_df[okex_df['symbol']=='BTC']['bnc_avg_price']))
+#     now = time.localtime()
+#     okex_df['time'] = time.strftime('%X', now)
+#     okex_df=round(okex_df,4)
+#
+#     return okex_df
 
 ######################################################################
+def map_df_to_str(array):
+    msg='Symbol : '+array[0]+' Kimp : '+str(array[1])+"% Gap : "+str(array[2])+' \nForeign Exchange : '+array[3]+' \nDomestic Exchange : '+array[4]+'\n'
+    return msg
 
 def merge_table():
-    a = get_gap_bnc_df()
-    b = get_gap_ftx_df()
-    c = get_gap_okex_df()
-    d = get_gap_bnc_df_bithumb()
-    e = get_gap_ftx_df_bithumb()
-    f = get_gap_okex_df_bithumb()
+    global message
+
+    upbit_market_all=get_common_upbit_intersection()
+    a = get_gap_bnc_df(upbit_market_all)
+    b = get_gap_ftx_df(upbit_market_all)
+    # c = get_gap_okex_df(upbit_market_all)
+
+    bithumb_market_all = get_common_bithumb_intersection()
+    d = get_gap_bnc_df_bithumb(bithumb_market_all)
+    e = get_gap_ftx_df_bithumb(bithumb_market_all)
+    # f = get_gap_okex_df_bithumb(bithumb_market_all)
+
     a['foreign_exchange'] = ['Binance'] * len(a)
     b['foreign_exchange'] = ['FTX'] * len(b)
-    c['foreign_exchange'] = ['OKEX'] * len(c)
+    # c['foreign_exchange'] = ['OKEX'] * len(c)
     d['foreign_exchange'] = ['Binance'] * len(d)
     e['foreign_exchange'] = ['FTX'] * len(e)
-    f['foreign_exchange'] = ['OKEX'] * len(f)
+    # f['foreign_exchange'] = ['OKEX'] * len(f)
 
     a['domestic_exchange'] = ['Upbit'] * len(a)
     b['domestic_exchange'] = ['Upbit'] * len(b)
-    c['domestic_exchange'] = ['Upbit'] * len(c)
+    # c['domestic_exchange'] = ['Upbit'] * len(c)
     d['domestic_exchange'] = ['Bithumb'] * len(d)
     e['domestic_exchange'] = ['Bithumb'] * len(e)
-    f['domestic_exchange'] = ['Bithumb'] * len(f)
+    # f['domestic_exchange'] = ['Bithumb'] * len(f)
 
-    merge_df=pd.concat([a,b,c,d,e,f])
+    merge_df=pd.concat([a,b,d,e])
     merge_df.columns=['symbol', 'limit', 'foreign_size', 'domestic_size',
                  'foreign_avg_price','domestic_avg_price', 'kimp_by_avg', 'gap',
                               'time','foreign_exchange','domestic_exchange']
+
+    telgm_token = "2088041838:AAHC9n45y1MHxwJOgzUw-6EqMsoqF0Z_qdQ"
+    bot = telegram.Bot(token=telgm_token)
+    now = time.localtime()
+
+    arr = merge_df.sort_values(by=['gap'], axis=0, ascending=True)[['symbol','kimp_by_avg','gap','foreign_exchange','domestic_exchange']][:10].to_numpy()
+    bot.edit_message_text(
+        message_id=3,
+        chat_id='1565832468',
+        text='Update time : ' + time.strftime('%Y-%m-%d %X', now) + '\n\n' + '\n'.join(list(map(map_df_to_str, arr)))
+    )
+
     return merge_df
